@@ -1,0 +1,728 @@
+<!doctype html><html><head><meta charset=utf8><meta name=viewport content="width=device-width,initial-scale=1,viewport-fit=cover"><style>:root{color-scheme:light;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}html{scroll-padding-top:env(safe-area-inset-top,0px)}body{margin:0;padding:0;font:14px -apple-system,BlinkMacSystemFont,sans-serif;background:#fff;color:#000}img{max-width:100%}[hidden]:not([hidden=until-found i]){display:none!important}</style></head><body>
+<title>心臟循環互動模型</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@500&family=Noto+Sans+TC:wght@400;500;700&family=Noto+Serif+TC:wght@700&display=swap">
+<style>
+/* Layout: 左側為可縮放的 SVG 舞台（上方肺循環、中間心臟、下方體循環），右側為說明面板與流動順序。 */
+:root{
+  --bg:#eef1f4; --panel:#ffffff; --stage:#fbfcfd; --ink:#18202b; --muted:#566272; --line:#d3dae2;
+  --accent:#1c5d8c; --accent-ink:#ffffff; --wall:#8c4954; --lung:#f7e3e6; --tissue:#efe6dc; --cell:#e0cfbd;
+  --nucleus:#b99f86; --air:#e8f3fa; --halo:#fbfcfd;
+  --oxy:#ff4d4d; --deoxy:#540e1e;
+  --serif:"Noto Serif TC","Noto Serif CJK TC","Songti TC","PMingLiU",serif;
+  --sans:"Noto Sans TC","Noto Sans CJK TC","PingFang TC","Microsoft JhengHei",system-ui,sans-serif;
+  --mono:"IBM Plex Mono",ui-monospace,Menlo,monospace;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --bg:#11151b; --panel:#192029; --stage:#141a22; --ink:#e7ecf2; --muted:#9aa7b6; --line:#2a3441;
+    --accent:#74b4e4; --accent-ink:#0b1722; --wall:#b97480; --lung:#2a2026; --tissue:#2a241f; --cell:#3a3029;
+    --nucleus:#5b4a3c; --air:#1b2a36; --halo:#141a22; color-scheme:dark;
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#11151b; --panel:#192029; --stage:#141a22; --ink:#e7ecf2; --muted:#9aa7b6; --line:#2a3441;
+  --accent:#74b4e4; --accent-ink:#0b1722; --wall:#b97480; --lung:#2a2026; --tissue:#2a241f; --cell:#3a3029;
+  --nucleus:#5b4a3c; --air:#1b2a36; --halo:#141a22; color-scheme:dark;
+}
+*{box-sizing:border-box}
+body{background:var(--bg);color:var(--ink);font:14px/1.65 var(--sans);
+  padding-block:22px 36px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
+.wrap{max-width:1180px;margin:0 auto;display:flex;flex-direction:column;gap:18px}
+header{display:flex;flex-direction:column;gap:4px}
+.eyebrow{margin:0;font:500 12px/1.4 var(--mono);letter-spacing:.14em;color:var(--muted)}
+h1{margin:0;font:700 clamp(26px,4.2vw,36px)/1.2 var(--serif);text-wrap:balance}
+.lede{margin:4px 0 0;max-width:62ch;color:var(--muted)}
+.layout{display:grid;grid-template-columns:minmax(0,1fr);gap:14px;align-items:start}
+.stage-card{min-width:0;background:var(--stage);border:1px solid var(--line);border-radius:14px;overflow:hidden}
+.bar{display:flex;flex-wrap:wrap;align-items:center;gap:8px 12px;padding:12px 14px;border-bottom:1px solid var(--line);background:var(--panel)}
+.btn{font:500 14px/1 var(--sans);min-height:36px;padding:0 14px;border:1px solid var(--line);border-radius:8px;background:var(--panel);color:var(--ink);cursor:pointer}
+.btn:hover{border-color:var(--accent)}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:var(--accent-ink);min-width:76px}
+.btn[aria-pressed="true"]:not(.primary){border-color:var(--accent);box-shadow:inset 0 0 0 1px var(--accent);color:var(--accent)}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.speed,.chk{display:inline-flex;align-items:center;gap:6px;color:var(--muted);font-size:13px;white-space:nowrap}
+.speed input{width:96px;accent-color:var(--accent)}
+.speed output{font:500 12px var(--mono);color:var(--ink);min-width:3.2em}
+.chk input{accent-color:var(--accent);width:16px;height:16px}
+.seg{display:inline-flex;border:1px solid var(--line);border-radius:8px;overflow:hidden}
+.seg button{font:500 13px/1 var(--sans);min-height:34px;padding:0 12px;border:0;background:var(--panel);color:var(--ink);cursor:pointer}
+.seg button+button{border-left:1px solid var(--line)}
+.seg button[aria-pressed="true"]{background:var(--accent);color:var(--accent-ink)}
+.legend{display:flex;flex-wrap:wrap;gap:6px 18px;padding:9px 14px;border-bottom:1px solid var(--line);font-size:13px;color:var(--muted)}
+.legend span{display:inline-flex;align-items:center;gap:7px}
+.dot{width:14px;height:14px;border-radius:50%;display:inline-block;border:1px solid rgba(0,0,0,.35)}
+.dot.oxy{background:var(--oxy)} .dot.deoxy{background:var(--deoxy);border-color:#c4566b}
+.dot.o2{background:#9fd8ff;border-color:#2b7fb8;width:11px;height:11px} .dot.co2{background:#c9b79c;border-color:#6b5a44;width:11px;height:11px}
+.dot.glu{background:#ffc94d;border:0;border-radius:0;width:13px;height:13px;clip-path:polygon(25% 7%,75% 7%,100% 50%,75% 93%,25% 93%,0 50%)}
+.dot.waste{background:#c39be6;border:0;border-radius:0;width:13px;height:13px;clip-path:polygon(50% 0,100% 50%,50% 100%,0 50%)}
+.subs{display:flex;flex-wrap:wrap;align-items:center;gap:8px 16px;padding:10px 14px;border-bottom:1px solid var(--line);background:var(--panel)}
+.subs-t{font:500 12px var(--mono);letter-spacing:.1em;color:var(--muted)}
+.subs .chk{color:var(--ink)}
+.subs-n{flex-basis:100%;font-size:12px;color:var(--muted);line-height:1.5}
+svg.model{display:block;width:100%;height:auto;touch-action:manipulation}
+.lbl{font:700 16px var(--sans);fill:var(--ink);paint-order:stroke;stroke:var(--halo);stroke-width:4.5px;stroke-linejoin:round;pointer-events:none}
+.lbl.sm{font-size:13px;font-weight:500;fill:var(--muted)}
+.lbl.big{font:700 22px var(--serif);fill:var(--muted);opacity:.75}
+svg.model.nolabels .lbl{display:none}
+svg.model[data-f="sys"] [data-c="pul"]{opacity:.14}
+svg.model[data-f="pul"] [data-c="sys"]{opacity:.14}
+.hit{fill:transparent;stroke:transparent;cursor:pointer;pointer-events:all}
+.hit:hover,.hit.hov{stroke:var(--accent);stroke-width:3}
+.hit.sel{stroke:var(--accent);stroke-width:3.5}
+.rbc{cursor:pointer}
+.ring{fill:none;stroke:var(--accent);stroke-width:2.5;stroke-dasharray:5 4;pointer-events:none}
+.panel{min-width:0;display:flex;flex-direction:column;gap:14px}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:16px 18px;min-width:0}
+.card h2,.card h3{margin:0;font:700 20px/1.3 var(--serif);text-wrap:balance}
+.card h3{font-size:16px}
+.tags{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px}
+.tag{display:inline-flex;align-items:center;gap:6px;font:500 12px/1 var(--sans);padding:5px 9px;border:1px solid var(--line);border-radius:999px;color:var(--muted)}
+.tag i{width:18px;height:10px;border-radius:5px;border:1px solid rgba(0,0,0,.3);display:inline-block}
+#iDesc{margin:10px 0 0;max-width:62ch}
+dl.facts{margin:12px 0 0;display:grid;grid-template-columns:auto 1fr;gap:6px 14px;font-size:13px}
+dl.facts dt{color:var(--muted)} dl.facts dd{margin:0;min-width:0}
+dl.facts dd b{font:500 13px var(--mono)}
+#iNext{margin-top:14px}
+ol.steps{list-style:none;margin:10px 0 0;padding:0;display:flex;flex-direction:column;gap:2px}
+ol.steps li.group{margin:10px 0 2px;font:500 12px var(--mono);letter-spacing:.12em;color:var(--muted)}
+ol.steps li.group:first-child{margin-top:0}
+.step{width:100%;display:grid;grid-template-columns:24px minmax(0,1fr) auto;align-items:center;gap:10px;text-align:left;font:inherit;color:var(--ink);background:transparent;border:1px solid transparent;border-radius:8px;padding:6px 8px;cursor:pointer}
+.step:hover{background:var(--bg)}
+.step .n{font:500 12px var(--mono);color:var(--muted);text-align:center}
+.step .o{width:26px;height:10px;border-radius:5px;border:1px solid rgba(0,0,0,.3)}
+.step[aria-current="true"]{border-color:var(--accent);background:var(--bg);font-weight:700}
+.step[aria-current="true"] .n{color:var(--accent)}
+.rbc-note{display:grid;grid-template-columns:minmax(0,220px) minmax(0,1fr);gap:14px;align-items:center;margin-top:8px}
+@media (max-width:480px){.rbc-note{grid-template-columns:minmax(0,1fr)}}
+.rbc-note p{margin:0;font-size:13px;color:var(--muted)}
+.rbc-note svg{width:100%;height:auto;display:block}
+.cap{fill:var(--muted);font:500 11px var(--sans)}
+@media (prefers-reduced-motion:reduce){*{scroll-behavior:auto!important}}
+
+:root{--hi:#b4500a;--lo:#1a609a}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){--hi:#ffb36b;--lo:#86c4f2}}
+:root[data-theme="dark"]{--hi:#ffb36b;--lo:#86c4f2}
+.conc{font:600 14px var(--sans);fill:var(--ink);paint-order:stroke;stroke:var(--halo);stroke-width:4px;stroke-linejoin:round;pointer-events:none}
+.conc.tiny{font-size:13px}
+.conc .hi{fill:var(--hi);font-weight:700}
+.conc .lo{fill:var(--lo);font-weight:700}
+svg.model:not(.showconc) .conc,svg.model:not(.show-o2) .c-o2,svg.model:not(.show-co2) .c-co2,svg.model:not(.show-glu) .c-glu,svg.model:not(.show-waste) .c-waste,svg.model:not(.show-lung) .c-lung{display:none}
+svg.model.showconc.show-lung .alv{transform:translateY(-24px)}
+#gRbc,#gRbcOver,#gVOver,#gValve,#gGas{pointer-events:none}
+
+html,body{height:100%}
+.top{display:flex;flex-direction:column;gap:14px}
+.viewtog{display:flex;align-items:center;gap:10px}
+.vt{font:500 12px var(--mono);letter-spacing:.1em;color:var(--muted)}
+.controls{background:var(--panel);border:1px solid var(--line);border-radius:14px;overflow:hidden}
+.controls .subs{border-bottom:0}
+/* 手機：直式單欄，字放大以便縮小後仍可讀 */
+body[data-view="phone"] .wrap{max-width:480px}
+body[data-view="phone"] .lbl{font-size:24px;stroke-width:6px}
+body[data-view="phone"] .lbl.sm{font-size:19px}
+body[data-view="phone"] .lbl.big{font-size:30px}
+body[data-view="phone"] .conc{font-size:19px;stroke-width:5px}
+body[data-view="phone"] .conc.tiny{font-size:17px}
+/* 網頁 / 電子白板：橫式 16:9，標題與控制列壓成上方一條，下方三欄（說明｜示意圖｜流動順序） */
+body[data-view="web"] .lbl{font-size:20px;stroke-width:5px}
+body[data-view="web"] .lbl.sm{font-size:16px}
+body[data-view="web"] .lbl.big{font-size:26px}
+body[data-view="web"] .conc{font-size:16px;stroke-width:4.5px}
+body[data-view="web"] .conc.tiny{font-size:14px}
+@media (min-width:900px){
+  body[data-view="web"]{height:100%;padding-block:10px 12px;font-size:15px}
+  body[data-view="web"] .wrap{max-width:none;height:100%;min-height:640px;display:grid;grid-template-rows:auto minmax(0,1fr);gap:10px}
+  body[data-view="web"] .top{flex-direction:row;flex-wrap:wrap;align-items:center;gap:6px 22px}
+  body[data-view="web"] header{order:1;flex:0 0 auto}
+  body[data-view="web"] .eyebrow,body[data-view="web"] .lede{display:none}
+  body[data-view="web"] h1{font-size:26px}
+  body[data-view="web"] .viewtog{order:3;margin-left:auto}
+  body[data-view="web"] .controls{order:2;flex:1 1 600px;display:flex;flex-wrap:wrap;align-items:center;gap:6px 12px;background:none;border:0;border-radius:0;overflow:visible}
+  body[data-view="web"] .controls .bar,body[data-view="web"] .controls .legend,body[data-view="web"] .controls .subs{display:contents}
+  body[data-view="web"] .subs-n,body[data-view="web"] .subs-t{display:none}
+  body[data-view="web"] .speed input{width:80px}
+  body[data-view="web"] .layout{height:100%;min-height:0;grid-template-columns:minmax(0,1fr) var(--sw,520px) minmax(0,1fr);grid-template-rows:auto minmax(0,1fr);gap:12px 14px;align-items:stretch}
+  body[data-view="web"] .stage-card{grid-column:2;grid-row:1/span 2;align-self:center}
+  body[data-view="web"] .panel{display:contents}
+  body[data-view="web"] #info{grid-column:1;grid-row:1;min-height:0;overflow:auto}
+  body[data-view="web"] .c-rbc{grid-column:1;grid-row:2;min-height:0;overflow:auto}
+  body[data-view="web"] .c-steps{grid-column:3;grid-row:1/span 2;min-height:0;overflow:auto}
+  body[data-view="web"] .card h2{font-size:24px}
+  body[data-view="web"] #iDesc{font-size:15.5px}
+  body[data-view="web"] dl.facts{font-size:14.5px}
+  body[data-view="web"] .step{font-size:15px;padding:5px 8px}
+  body[data-view="web"] .rbc-note{grid-template-columns:minmax(0,1fr)}
+  body[data-view="web"] .rbc-note svg{max-width:230px}
+}
+.stage-card{position:relative}
+.phase{position:absolute;left:10px;bottom:10px;display:flex;flex-direction:column;gap:1px;padding:5px 9px;background:var(--panel);border:1px solid var(--line);border-radius:8px;font-size:12px;line-height:1.4;color:var(--muted);pointer-events:none;max-width:62%}
+.phase b{color:var(--ink);font-size:13px}
+</style>
+
+<div class="wrap">
+  <div class="top">
+  <header>
+    <p class="eyebrow">體循環 ＋ 肺循環</p>
+    <h1>心臟循環互動模型</h1>
+    <p class="lede">雙凹圓盤狀的紅血球從左心室出發，依序流過體循環與肺循環。點選任何血管或心腔查看說明，或按「追蹤紅血球」跟著一顆紅血球走完一圈。</p>
+  </header>
+    <div class="viewtog" role="group" aria-label="顯示模式">
+      <span class="vt">顯示模式</span>
+      <div class="seg">
+        <button type="button" data-v="web" aria-pressed="false" title="橫式 16:9，適合電子白板與電腦">網頁 16:9</button>
+        <button type="button" data-v="phone" aria-pressed="false" title="直式單欄，適合手機">手機</button>
+      </div>
+    </div>
+    <section class="controls" aria-label="控制列">
+      <div class="bar">
+        <button id="play" class="btn primary" type="button" aria-pressed="true">暫停</button>
+        <label class="speed" for="speed">速度 <input id="speed" type="range" min="0.25" max="2" step="0.25" value="1"><output id="speedOut" for="speed">1×</output></label>
+        <div class="seg" id="filterSeg" role="group" aria-label="顯示範圍">
+          <button type="button" data-f="all" aria-pressed="true">全部</button>
+          <button type="button" data-f="sys" aria-pressed="false">體循環</button>
+          <button type="button" data-f="pul" aria-pressed="false">肺循環</button>
+        </div>
+        <label class="chk" for="tLabels"><input id="tLabels" type="checkbox" checked>名稱</label>
+        <button id="track" class="btn" type="button" aria-pressed="false">追蹤紅血球</button>
+      </div>
+      <div class="legend">
+        <span><i class="dot oxy"></i>充氧血（鮮紅）</span>
+        <span><i class="dot deoxy"></i>缺氧血（暗紅）</span>
+      </div>
+      <div class="subs" role="group" aria-label="顯示交換的物質">
+        <span class="subs-t">顯示物質</span>
+        <label class="chk" for="sO2"><input id="sO2" type="checkbox" data-s="o2" checked><i class="dot o2"></i>氧氣 O₂</label>
+        <label class="chk" for="sCO2"><input id="sCO2" type="checkbox" data-s="co2" checked><i class="dot co2"></i>二氧化碳 CO₂</label>
+        <label class="chk" for="sGlu"><input id="sGlu" type="checkbox" data-s="glu" checked><i class="dot glu"></i>葡萄糖</label>
+        <label class="chk" for="sWaste"><input id="sWaste" type="checkbox" data-s="waste" checked><i class="dot waste"></i>廢物</label>
+        <label class="chk" for="tConc"><input id="tConc" type="checkbox">濃度高低</label>
+        <span class="subs-n">O₂、CO₂ 在組織與肺泡都會交換；葡萄糖與廢物只在組織的微血管處交換。</span>
+      </div>
+    </section>
+  </div>
+
+  <div class="layout">
+    <section class="stage-card" aria-label="心臟循環示意圖">
+      <div class="phase" id="phase"><b id="phName">心房收縮</b><span id="phValve">房室瓣 開 ・ 半月瓣 關</span></div>
+      <svg id="svg" class="model" viewBox="0 0 840 920" role="img" aria-label="心臟、肺循環與體循環的二維示意圖，紅血球沿血管流動">
+        <defs>
+          <circle id="rbcPath" r="8.5"/>
+          <radialGradient id="rbcShade" cx="50%" cy="50%" r="50%">
+            <stop offset="0" stop-color="#fff" stop-opacity=".3"/>
+            <stop offset=".36" stop-color="#fff" stop-opacity=".15"/>
+            <stop offset=".56" stop-color="#fff" stop-opacity="0"/>
+            <stop offset=".82" stop-color="#000" stop-opacity=".14"/>
+            <stop offset="1" stop-color="#000" stop-opacity=".38"/>
+          </radialGradient>
+          <radialGradient id="faceG" cx="50%" cy="50%" r="52%">
+            <stop offset="0" stop-color="#ff9a8f"/><stop offset=".3" stop-color="#ee2234"/>
+            <stop offset=".78" stop-color="#c10e1f"/><stop offset="1" stop-color="#7d0610"/>
+          </radialGradient>
+        </defs>
+        <g id="gBg"></g>
+        <g id="gChBlood"></g>
+        <g id="gChWall"></g>
+        <g id="gPatch"></g>
+        <g id="gVWall"></g>
+        <g id="gChInner"></g>
+        <g id="gVFill"></g>
+        <g id="gGas"></g>
+        <g id="gRbc"></g>
+        <g id="gVOver"></g>
+        <g id="gValve"></g>
+        <g id="gRbcOver"></g>
+        <g id="gHit"></g>
+        <g id="gLbl"></g>
+      </svg>
+    </section>
+
+    <aside class="panel" aria-label="說明">
+      <section class="card" id="info" aria-live="polite">
+        <div class="tags"><span class="tag" id="tCirc"></span><span class="tag" id="tBlood"></span></div>
+        <h2 id="iName"></h2>
+        <p id="iDesc"></p>
+        <dl class="facts" id="iFacts"></dl>
+        <button id="iNext" class="btn" type="button"></button>
+      </section>
+      <section class="card c-steps">
+        <h3>血液流動順序</h3>
+        <ol class="steps" id="steps"></ol>
+      </section>
+      <section class="card c-rbc">
+        <h3>雙凹圓盤狀紅血球</h3>
+        <div class="rbc-note">
+          <svg viewBox="0 0 230 124" role="img" aria-label="紅血球俯視圖，中央凹陷">
+            <circle cx="64" cy="50" r="40" fill="url(#faceG)" stroke="#6b0610" stroke-width="1.5"/>
+            <circle cx="64" cy="50" r="17" fill="none" stroke="#000" stroke-opacity=".2" stroke-width="1"/>
+            <path d="M64,50 L124,34 M92,70 L124,80" stroke="var(--muted)" stroke-width="1" fill="none"/>
+            <text class="cap" x="128" y="38">中央凹陷（較薄）</text>
+            <text class="cap" x="128" y="84">邊緣較厚</text>
+            <path d="M24,100 H104 M24,95 V105 M104,95 V105" stroke="var(--muted)" stroke-width="1" fill="none"/>
+            <text class="cap" x="64" y="118" text-anchor="middle">直徑約 7.5 μm</text>
+          </svg>
+          <p>俯視時中央較薄（約 1 μm）、邊緣較厚（約 2.5 μm），整體呈雙凹圓盤狀。凹陷的外形增加表面積，利於氣體擴散，也讓細胞能變形，擠過比自己窄的微血管。</p>
+        </div>
+      </section>
+    </aside>
+  </div>
+</div>
+<script>
+(function(){
+'use strict';
+const NS='http://www.w3.org/2000/svg';
+const $=id=>document.getElementById(id);
+const el=(tag,attrs,parent)=>{const e=document.createElementNS(NS,tag);for(const k in attrs)e.setAttribute(k,attrs[k]);if(parent)parent.appendChild(e);return e;};
+const clamp=(v,a,b)=>Math.min(b,Math.max(a,v));
+const mix=(a,b,t)=>a.map((v,i)=>v+(b[i]-v)*t);
+const rgb=c=>'rgb('+(c[0]|0)+','+(c[1]|0)+','+(c[2]|0)+')';
+// 血液顏色：充氧(O)與缺氧(D)。V=血管底色 R=紅血球 S=紅血球邊線
+const C={vO:[255,77,77],vD:[84,14,30],rO:[214,16,32],rD:[140,22,48],sO:[110,5,15],sD:[205,100,120]};
+const svg=$('svg');
+
+/* ---------- 心腔 ---------- */
+function rr(x,y,w,h,r,inset){
+  inset=inset||0;x+=inset;y+=inset;w-=2*inset;h-=2*inset;
+  const a=Math.max(0,r[0]-inset),b=Math.max(0,r[1]-inset),c=Math.max(0,r[2]-inset),d=Math.max(0,r[3]-inset);
+  return 'M'+(x+a)+','+y+'H'+(x+w-b)+'Q'+(x+w)+','+y+' '+(x+w)+','+(y+b)+'V'+(y+h-c)+'Q'+(x+w)+','+(y+h)+' '+(x+w-c)+','+(y+h)+'H'+(x+d)+'Q'+x+','+(y+h)+' '+x+','+(y+h-d)+'V'+(y+a)+'Q'+x+','+y+' '+(x+a)+','+y+'Z';
+}
+const CH={
+  ra:{rect:[215,322,140,114],r:[62,14,14,14],wall:8,o2:0,name:'右心房'},
+  la:{rect:[485,322,140,114],r:[14,62,14,14],wall:8,o2:1,name:'左心房'},
+  rv:{rect:[215,448,199,138],r:[14,8,10,76],wall:18,o2:0,name:'右心室'},
+  lv:{rect:[426,448,199,138],r:[8,14,76,10],wall:34,o2:1,name:'左心室'}
+};
+
+/* ---------- 微血管床（多條並行的微血管） ---------- */
+function bodyLane(dy,ph){
+  let s='M610,815 C588,815 590,'+(815+dy)+' 560,'+(815+dy);
+  for(let x=552;x>=328;x-=8){
+    const amp=3*Math.min(1,(560-x)/30,(x-328)/30);
+    s+=' L'+x+','+(815+dy+amp*Math.sin(x/17+ph)).toFixed(1);
+  }
+  return s+' C292,'+(815+dy)+' 292,815 270,815';
+}
+function lungLane(r){
+  const cx=420,cy=150,a0=0.75*Math.PI,a1=2*Math.PI,k=0.7071;
+  const P=[cx+r*Math.cos(a0),cy+r*Math.sin(a0)],Q=[cx+r*Math.cos(a1),cy+r*Math.sin(a1)];
+  let s='M388,262 C388,242 '+(P[0]+k*18)+','+(P[1]+k*18)+' '+P[0]+','+P[1];
+  for(let i=1;i<=36;i++){const a=a0+(a1-a0)*i/36;s+=' L'+(cx+r*Math.cos(a)).toFixed(1)+','+(cy+r*Math.sin(a)).toFixed(1);}
+  return s+' C'+Q[0]+','+(Q[1]+25)+' 500,180 500,205';
+}
+
+/* ---------- 流動路徑：依序為 左心室 → … → 左心房 ---------- */
+const S=[
+ {id:'lv',ch:'lv',circuit:'sys',name:'左心室',d:['M555,441 C556,485 545,525 515,540 C485,555 455,540 454,500 C453,485 453,478 453,468'],w0:44,w1:32,bulge:18,o2:[1,1],speed:110,rs:1,pulse:.6,over:true,
+  desc:'肌肉最厚的心腔。收縮時以高壓把充氧血經主動脈瓣推入主動脈，是體循環的起點。',
+  facts:[['管壁','心肌最厚，約為右心室的 3 倍'],['血壓','收縮期約 120 mmHg'],['瓣膜','入口二尖瓣、出口主動脈瓣']]},
+ {id:'aorta',circuit:'sys',name:'主動脈',d:['M453,468 L453,322 C453,292 468,275 500,275 L695,275 C730,275 748,292 748,326 L748,680'],w0:32,w1:28,o2:[1,1],speed:190,rs:1,pulse:.7,wallW:10,over:true,
+  desc:'人體最粗的動脈。從左心室頂部向上出發，在左心房上方彎成主動脈弓，再沿右側向下通往全身。管壁富含彈性纖維。心室收縮時被撐大，舒張時彈回，把間歇的射血變成連續的血流。',
+  facts:[['管徑','約 2.5 cm'],['血流速度','約 30–40 cm/s'],['血壓','約 120 / 80 mmHg'],['管壁','厚，彈性纖維多']]},
+ {id:'art',circuit:'sys',name:'大動脈',d:['M748,680 C748,765 735,812 690,815'],w0:28,w1:16,o2:[1,1],speed:150,rs:.8,pulse:.5,wallW:10,
+  desc:'由主動脈分支，把充氧血分送到頭頸、四肢與各器官，例如頸動脈、腎動脈。管壁兼有彈性纖維與平滑肌。',
+  facts:[['管徑','約 0.5–1 cm'],['血流速度','約 10–20 cm/s'],['血壓','約 100 / 70 mmHg'],['管壁','厚，肌肉與彈性組織']]},
+ {id:'arteriole',circuit:'sys',name:'小動脈',d:['M690,815 L610,815'],w0:16,w1:11,o2:[1,1],speed:95,rs:.62,pulse:.2,wallW:8,
+  desc:'管壁平滑肌發達。收縮與舒張決定多少血液流入微血管，是調節血壓與血流分配的主要位置。',
+  facts:[['管徑','約 10–300 μm'],['血流速度','約 0.5 cm/s'],['血壓','由約 60 降到 30 mmHg'],['管壁','平滑肌厚']]},
+ {id:'capS',circuit:'sys',name:'微血管',sub:'組織',d:[bodyLane(-38,0),bodyLane(0,1.7),bodyLane(38,3.1)],w0:11,w1:11,o2:[1,0],speed:55,rs:.58,pulse:0,wallW:2.5,bed:true,
+  desc:'管壁只有一層內皮細胞，紅血球必須排成單列通過。血流最慢，讓 O₂ 與葡萄糖擴散進組織細胞，CO₂ 與細胞產生的廢物（例如尿素）擴散回血液。血液在這裡由充氧血變成缺氧血。',
+  facts:[['管徑','約 5–10 μm'],['血流速度','約 0.03–0.1 cm/s'],['血壓','約 35 → 15 mmHg'],['管壁','單層細胞，極薄']]},
+ {id:'venule',circuit:'sys',name:'小靜脈',d:['M270,815 L200,815'],w0:12,w1:24,o2:[0,0],speed:70,rs:.62,pulse:0,wallW:2,
+  desc:'匯集微血管流出的缺氧血，管壁很薄，再逐漸合併成較大的靜脈。',
+  facts:[['管徑','約 10–100 μm'],['血流速度','約 0.2 cm/s'],['血壓','約 15 → 10 mmHg'],['管壁','薄，平滑肌少']]},
+ {id:'vein',circuit:'sys',name:'大靜脈',d:['M200,815 C122,815 92,790 92,730 L92,470 C92,415 125,380 180,380 L250,380'],w0:24,w1:58,o2:[0,0],speed:105,rs:1,pulse:.05,wallW:3,
+  desc:'管腔比同級的動脈寬大，管壁卻薄、彈性小，血壓很低，所以能容納較多血液。內有瓣膜防止血液倒流，靠骨骼肌擠壓與呼吸運動推動血液回心。最後由上、下腔靜脈注入右心房。',
+  facts:[['管徑','腔靜脈約 2–3 cm'],['血流速度','約 10–20 cm/s'],['血壓','約 2–5 mmHg'],['管壁','薄，有靜脈瓣']]},
+ {id:'ra',ch:'ra',circuit:'sys',name:'右心房',d:['M250,380 C285,380 292,412 288,441'],w0:58,w1:44,bulge:40,o2:[0,0],speed:90,rs:1,pulse:.15,drv:'a',
+  desc:'接收上、下腔靜脈送回的缺氧血，收縮時經三尖瓣把血液送入右心室。體循環到這裡結束。',
+  facts:[['血壓','約 0–5 mmHg'],['瓣膜','三尖瓣（房室瓣）'],['管壁','薄']]},
+ {id:'rv',ch:'rv',circuit:'pul',name:'右心室',d:['M288,441 C288,512 322,548 362,526 C386,513 388,494 388,468'],w0:44,w1:28,bulge:36,o2:[0,0],speed:105,rs:1,pulse:.5,
+  desc:'把缺氧血經肺動脈瓣推入肺動脈，肺循環從這裡開始。只需送到鄰近的肺，所以壁比左心室薄，壓力也較低。',
+  facts:[['管壁','約 3–5 mm'],['血壓','收縮期約 25 mmHg'],['瓣膜','入口三尖瓣、出口肺動脈瓣']]},
+ {id:'pa',circuit:'pul',name:'肺動脈',d:['M388,468 L388,262'],w0:28,w1:16,o2:[0,0],speed:150,rs:.8,pulse:.5,wallW:8,
+  desc:'離開右心室後分成左、右肺動脈，通往兩側的肺。它是全身唯一運送缺氧血的動脈。',
+  facts:[['管徑','主幹約 2.5–3 cm'],['血流速度','約 20–30 cm/s'],['血壓','約 25 / 8 mmHg'],['血液','缺氧血']]},
+ {id:'capP',circuit:'pul',name:'肺泡壁的微血管',d:[lungLane(66),lungLane(82),lungLane(98)],w0:11,w1:11,o2:[0,1],speed:55,rs:.58,pulse:0,wallW:2.5,bed:true,
+  desc:'微血管包圍在肺泡外，肺泡壁與微血管壁各只有一層薄細胞，合計厚度不到 1 μm。O₂ 由肺泡擴散進血液，與紅血球的血紅素結合；CO₂ 由血液擴散進肺泡，隨呼氣排出。血液在這裡由缺氧血變成充氧血。',
+  facts:[['管徑','約 5–10 μm'],['血流速度','約 0.05–0.1 cm/s'],['交換面積','兩肺肺泡合計約 70 m²'],['血壓','約 10 mmHg']]},
+ {id:'pv',circuit:'pul',name:'肺靜脈',d:['M500,205 C500,290 556,285 556,345'],w0:20,w1:38,o2:[1,1],speed:105,rs:1,pulse:.05,wallW:2.5,
+  desc:'把充氧血送回左心房，左右各兩條，共 4 條。它是全身唯一運送充氧血的靜脈。',
+  facts:[['管徑','約 1–1.5 cm'],['血壓','約 5–10 mmHg'],['血液','充氧血']]},
+ {id:'la',ch:'la',circuit:'pul',name:'左心房',d:['M556,345 C540,382 574,410 555,441'],w0:38,w1:44,bulge:36,o2:[1,1],speed:90,rs:1,pulse:.15,drv:'a',
+  desc:'接收肺靜脈的充氧血，收縮時經二尖瓣（僧帽瓣）送入左心室，完成一整圈循環。肺循環到這裡結束。',
+  facts:[['血壓','約 5–10 mmHg'],['瓣膜','二尖瓣（僧帽瓣）'],['管壁','薄']]}
+];
+const N=S.length;
+
+/* ---------- 取樣：把每條路徑切成等距的點 ---------- */
+const tmp=el('path',{d:'M0,0',fill:'none',stroke:'none'},svg);
+function sample(d){
+  tmp.setAttribute('d',d);
+  const L=tmp.getTotalLength(),n=Math.max(8,Math.ceil(L/3)+1);
+  const X=new Float32Array(n),Y=new Float32Array(n),NX=new Float32Array(n),NY=new Float32Array(n);
+  for(let i=0;i<n;i++){const p=tmp.getPointAtLength(L*i/(n-1));X[i]=p.x;Y[i]=p.y;}
+  for(let i=0;i<n;i++){
+    const a=Math.max(0,i-1),b=Math.min(n-1,i+1);
+    let tx=X[b]-X[a],ty=Y[b]-Y[a];const m=Math.hypot(tx,ty)||1;
+    NX[i]=-ty/m;NY[i]=tx/m;
+  }
+  return {X,Y,NX,NY,L,n};
+}
+S.forEach(s=>{s.lanes=s.d.map(sample);s.Lref=s.lanes.map(l=>l.L);s.dur=s.Lref[0]/s.speed;});
+tmp.remove();
+const wAt=(s,t)=>s.w0+(s.w1-s.w0)*t+(s.bulge||0)*Math.sin(Math.PI*t);
+function o2At(s,t){
+  if(s.o2[0]===s.o2[1])return s.o2[0];
+  const x=clamp((t-.12)/.76,0,1);return s.o2[0]+(s.o2[1]-s.o2[0])*x*x*(3-2*x);
+}
+function poly(l,s,i0,i1){
+  const L=[],R=[];
+  for(let i=i0;i<=i1;i++){
+    const hw=wAt(s,i/(l.n-1))/2;
+    L.push((l.X[i]+l.NX[i]*hw).toFixed(1)+','+(l.Y[i]+l.NY[i]*hw).toFixed(1));
+    R.push((l.X[i]-l.NX[i]*hw).toFixed(1)+','+(l.Y[i]-l.NY[i]*hw).toFixed(1));
+  }
+  return 'M'+L.join('L')+'L'+R.reverse().join('L')+'Z';
+}
+window.__H={NS,$,el,clamp,mix,rgb,C,svg,rr,CH,S,N,wAt,o2At,poly};
+})();
+(function(){
+'use strict';
+const H=window.__H,{$,el,clamp,mix,rgb,C,svg,rr,CH,S,wAt,o2At,poly}=H;
+const vcol=o=>rgb(mix(C.vD,C.vO,o));
+
+/* ---------- 背景：肺、肺泡、組織細胞 ---------- */
+const gBg=$('gBg');
+el('rect',{x:120,y:14,width:600,height:218,rx:100,fill:'var(--lung)'},gBg);
+el('circle',{cx:420,cy:150,r:52,fill:'var(--air)',stroke:'var(--wall)','stroke-width':3,'stroke-opacity':.55},gBg);
+el('rect',{x:285,y:750,width:310,height:130,rx:26,fill:'var(--tissue)'},gBg);
+[345,430,515].forEach(x=>[796,834].forEach(y=>{
+  el('ellipse',{cx:x,cy:y,rx:34,ry:9.5,fill:'var(--cell)'},gBg);
+  el('circle',{cx:x+4,cy:y,r:3.2,fill:'var(--nucleus)'},gBg);
+}));
+
+/* ---------- 心腔 ---------- */
+const chEls={};
+const chSeg={};S.forEach((s,i)=>{if(s.ch)chSeg[s.ch]=i;});
+for(const k in CH){
+  const c=CH[k],r=c.rect,x=r[0],y=r[1],w=r[2],h=r[3],circ=S[chSeg[k]].circuit;
+  const blood=el('path',{d:rr(x,y,w,h,c.r),fill:vcol(c.o2),'data-c':circ},$('gChBlood'));
+  const wall=el('path',{d:rr(x,y,w,h,c.r),fill:'none',stroke:'var(--wall)','stroke-width':c.wall,'stroke-linejoin':'round','data-c':circ},$('gChWall'));
+  const inner=el('path',{d:rr(x,y,w,h,c.r,c.wall/2),fill:vcol(c.o2),'data-c':circ},$('gChInner'));
+  chEls[k]={parts:[blood,wall,inner],cx:x+w/2,cy:y+h/2};
+}
+// 房室瓣處的開口（兩側血液顏色相同）
+el('rect',{x:262,y:428,width:52,height:34,fill:vcol(0),'data-c':'sys'},$('gPatch'));
+el('rect',{x:529,y:428,width:52,height:40,fill:vcol(1),'data-c':'pul'},$('gPatch'));
+
+/* ---------- 血管：外層管壁 + 內層血液（含漸變切片） ---------- */
+const gHit=$('gHit');
+S.forEach((s,i)=>{
+  s.hits=[];
+  if(s.ch){
+    const r=CH[s.ch].rect;
+    s.hits.push(el('path',{d:rr(r[0],r[1],r[2],r[3],CH[s.ch].r),class:'hit','data-i':i},gHit));
+    return;
+  }
+  s.lanes.forEach(l=>{
+    const full=poly(l,s,0,l.n-1);
+    const wallPoly=s.over?poly(l,s,0,Math.max(1,l.n-4)):full;
+    el('path',{d:wallPoly,fill:'var(--wall)',stroke:'var(--wall)','stroke-width':2*s.wallW,'stroke-linejoin':'round','data-c':s.circuit},s.over?$('gVOver'):$('gVWall'));
+    if(s.over&&!s.cl){const lv=CH.lv;s.cl=el('path',{d:rr(lv.rect[0],lv.rect[1],lv.rect[2],lv.rect[3],lv.r,lv.wall/2),fill:vcol(lv.o2),'data-c':'sys'},$('gVOver'));chEls.lv.parts.push(s.cl);}
+    const K=s.o2[0]!==s.o2[1]?28:1;
+    for(let k=0;k<K;k++){
+      const i0=Math.floor((l.n-1)*k/K),i1=Math.min(l.n-1,Math.floor((l.n-1)*(k+1)/K)+1);
+      const col=vcol(o2At(s,((i0+i1)/2)/(l.n-1)));
+      el('path',{d:poly(l,s,i0,i1),fill:col,stroke:col,'stroke-width':s.over?2.6:.8,'data-c':s.circuit},s.over?$('gVOver'):$('gVFill'));
+    }
+    s.hits.push(el('path',{d:full,class:'hit','data-i':S.indexOf(s)},gHit));
+  });
+});
+
+/* ---------- 瓣膜：房室瓣 / 半月瓣，隨心跳開閉 ---------- */
+const valves=[
+  {x:288,y:441,dx:0,dy:1,h:26,type:'av',c:'sys'},
+  {x:555,y:441,dx:0,dy:1,h:26,type:'av',c:'pul'},
+  {x:388,y:458,dx:0,dy:-1,h:12,type:'sl',c:'pul'},
+  {x:453,y:468,dx:0,dy:-1,h:14,type:'sl',c:'sys'}
+];
+valves.forEach(v=>{v.el=el('path',{fill:'none',stroke:'#f1ded6','stroke-width':3.4,'stroke-linecap':'round','data-c':v.c},$('gValve'));});
+function setValve(v,open){
+  const px=-v.dy,py=v.dx,lat=v.h*(0.05+0.95*open),len=-6+20*open;
+  const a=[v.x+px*v.h,v.y+py*v.h],b=[v.x+px*lat+v.dx*len,v.y+py*lat+v.dy*len];
+  const c=[v.x-px*v.h,v.y-py*v.h],e=[v.x-px*lat+v.dx*len,v.y-py*lat+v.dy*len];
+  v.el.setAttribute('d','M'+a[0].toFixed(1)+','+a[1].toFixed(1)+'L'+b[0].toFixed(1)+','+b[1].toFixed(1)+'M'+c[0].toFixed(1)+','+c[1].toFixed(1)+'L'+e[0].toFixed(1)+','+e[1].toFixed(1));
+}
+valves.forEach(v=>setValve(v,1));
+
+/* ---------- 名稱標示 ---------- */
+const labels=[
+  ['右心房',205,338,'end'],['左心房',640,386,'start'],['右心室',315,630,'middle'],['左心室',525,630,'middle'],
+  ['主動脈',712,628,'end'],['大動脈',705,744,'end'],['小動脈',650,788,'middle'],['微血管（組織）',440,906,'middle'],
+  ['小靜脈',235,852,'middle'],['大靜脈',132,600,'start'],['肺動脈',368,292,'end'],['肺泡壁的微血管',420,34,'middle'],
+  ['肺靜脈',548,218,'start'],['肺泡',420,156,'middle','alv'],['組織細胞',586,872,'end','sm'],['肺',180,70,'middle','big']
+];
+labels.forEach(l=>{
+  const t=el('text',{x:l[1],y:l[2],'text-anchor':l[3],class:'lbl'+(l[4]?' '+l[4]:'')},$('gLbl'));
+  t.textContent=l[0];
+});
+
+/* 濃度高低文字（由「濃度高低」核取方塊切換） */
+function conc(x,y,anchor,parts,cls,key){
+  const t=el('text',{x:x,y:y,'text-anchor':anchor,class:'conc'+(cls?' '+cls:'')+(key?' '+key:'')},$('gLbl'));
+  parts.forEach(p=>{const q=el('tspan',p[1]?{class:p[1]}:{},t);q.textContent=p[0];});
+  return t;
+}
+const T=(k,name,hi)=>conc(440,742,'middle',[[name+'　血液 ',''],[hi?'高':'低',hi?'hi':'lo'],['｜細胞 ',''],[hi?'低':'高',hi?'lo':'hi']],'','c-'+k);
+H.concGroups={
+  tissue:[['o2',T('o2','O₂',true)],['co2',T('co2','CO₂',false)],['glu',T('glu','葡萄糖',true)],['waste',T('waste','廢物',false)]],
+  alv:[['o2',conc(420,162,'middle',[['O₂ ',''],['高','hi']],'tiny','c-o2')],['co2',conc(420,184,'middle',[['CO₂ ',''],['低','lo']],'tiny','c-co2')]],
+  lung:[['o2',conc(306,126,'end',[['O₂ ',''],['低','lo']],'','c-o2')],['co2',conc(306,148,'end',[['CO₂ ',''],['高','hi']],'','c-co2')]]
+};
+conc(306,104,'end',[['微血管內','']],'','c-lung');
+
+H.vcol=vcol;H.chEls=chEls;H.valves=valves;H.setValve=setValve;
+})();
+(function(){
+'use strict';
+const H=window.__H,{$,el,clamp,mix,rgb,C,svg,S,N,wAt,o2At,chEls,valves,setValve,vcol}=H;
+const reduce=window.matchMedia&&matchMedia('(prefers-reduced-motion: reduce)').matches;
+const st={playing:!reduce,speed:1,sub:{o2:true,co2:true,glu:true,waste:true},tracked:null,sel:0,time:0};
+const segName=s=>s.name+(s.sub?'（'+s.sub+'）':'');
+
+/* ---------- 紅血球 ---------- */
+const NR=84,gRbc=$('gRbc'),gOver=$('gRbcOver'),R=[];
+const cum=[0];S.forEach(s=>cum.push(cum[cum.length-1]+s.dur));const T=cum[N];
+const pickLane=s=>s.lanes.length>1?Math.floor(Math.random()*s.lanes.length):0;
+for(let i=0;i<NR;i++){
+  const tau=(i+Math.random()*.4)/NR*T;let si=0;while(si<N-1&&cum[si+1]<=tau)si++;
+  const g=el('g',{class:'rbc','data-c':S[si].circuit},S[si].over?gOver:gRbc);
+  const r={seg:si,t:(tau-cum[si])/S[si].dur,lane:pickLane(S[si]),off:(Math.random()*2-1)*.85,ph:Math.random()*6.28,el:g,key:'',x:0,y:0};
+  r.b=el('use',{href:'#rbcPath','stroke-width':'.9'},g);
+  el('use',{href:'#rbcPath',fill:'url(#rbcShade)'},g);
+  g.__r=r;R.push(r);
+}
+const ring=el('circle',{class:'ring',r:20,visibility:'hidden'},gOver);
+
+/* ---------- 心跳週期：心房收縮 → 心室收縮 → 舒張 ---------- */
+function cycle(u){
+  const bump=(a,b)=>u>=a&&u<b?Math.sin(Math.PI*(u-a)/(b-a)):0;
+  return {atria:bump(0,.2),vent:bump(.2,.52),ph:u<.2?0:u<.52?1:2,av:u<.2?clamp(u/.025,0,1)*clamp((.2-u)/.025,0,1):0};
+}
+const tf=(c,s)=>'translate('+c.cx+' '+c.cy+') scale('+s.toFixed(3)+') translate('+(-c.cx)+' '+(-c.cy)+')';
+let lastA=-1,lastV=-1,lastPh=-1,lastK=-1;
+const PH=[['心房收縮','房室瓣 開 ・ 半月瓣 關'],['心室收縮','房室瓣 關 ・ 半月瓣 開'],['心臟舒張','房室瓣 關 ・ 半月瓣 關']];
+function beat(cy){
+  if(cy.ph!==lastPh){lastPh=cy.ph;$('phName').textContent=PH[cy.ph][0];$('phValve').textContent=PH[cy.ph][1];}
+  const a=Math.round(cy.atria*50),v=Math.round(cy.vent*50);
+  if(a!==lastA){lastA=a;[chEls.ra,chEls.la].forEach(c=>c.parts.forEach(p=>p.setAttribute('transform',tf(c,1-.07*cy.atria))));}
+  if(v!==lastV){
+    lastV=v;[chEls.rv,chEls.lv].forEach(c=>c.parts.forEach(p=>p.setAttribute('transform',tf(c,1-.075*cy.vent))));
+  }
+  // 房室瓣只在心房收縮時打開；半月瓣只在心室收縮時打開，其餘時間都是關閉
+  const av=cy.av,sl=clamp((cy.vent-.25)*5,0,1),key=Math.round(av*20)*100+Math.round(sl*20);
+  if(key!==lastK){lastK=key;valves.forEach(x=>setValve(x,x.type==='sl'?sl:av));}
+}
+
+/* ---------- 物質交換粒子：O₂、CO₂、葡萄糖、廢物 ---------- */
+const gGas=$('gGas'),P=[];
+const SUB={
+  o2:{d:'M-3,0a3,3 0 1,0 6,0a3,3 0 1,0 -6,0',fill:'#9fd8ff',stroke:'#2b7fb8',fwd:true,tIn:[.15,.6],tOut:[.2,.8]},
+  co2:{d:'M-3,0a3,3 0 1,0 6,0a3,3 0 1,0 -6,0',fill:'#c9b79c',stroke:'#6b5a44',fwd:false,tIn:[.45,.85],tOut:[.2,.8]},
+  glu:{d:'M-4,0L-2,-3.5L2,-3.5L4,0L2,3.5L-2,3.5Z',fill:'#ffc94d',stroke:'#9a6a00',fwd:true,tIn:[.12,.7]},
+  waste:{d:'M0,-4.2L4.2,0L0,4.2L-4.2,0Z',fill:'#c39be6',stroke:'#6a3f94',fwd:false,tIn:[.35,.9]}
+};
+// 物質與發生位置。fwd：組織中由血液進入細胞、肺中由肺泡進入血液
+const SITES=[['o2','tissue'],['o2','lung'],['co2','tissue'],['co2','lung'],['glu','tissue'],['waste','tissue']];
+for(let i=0;i<80;i++)P.push({e:el('path',{'stroke-width':.9,opacity:0},gGas),life:0,dur:1,x0:0,y0:0,x1:0,y1:0,k:'o2'});
+const active=()=>SITES.filter(q=>st.sub[q[0]]);
+function spawn(on){
+  const p=P.find(q=>q.life<=0);if(!p)return;
+  const pick=on[Math.floor(Math.random()*on.length)],k=pick[0],lung=pick[1]==='lung',m=SUB[k];
+  const s=S[lung?10:4],L=Math.floor(Math.random()*3),l=s.lanes[L];
+  const rg=lung?m.tOut:m.tIn,t=rg[0]+(rg[1]-rg[0])*Math.random(),i=Math.round(t*(l.n-1));
+  let x=l.X[i],y=l.Y[i],tx,ty;
+  if(lung){const dx=x-420,dy=y-150,d=Math.hypot(dx,dy)||1;tx=420+dx/d*55;ty=150+dy/d*55;}
+  else{x=clamp(x,318,542);tx=x;ty=y+(L===0?19:L===2?-19:(Math.random()<.5?19:-19));}
+  const fromLane=lung?!m.fwd:m.fwd;
+  p.x0=fromLane?x:tx;p.y0=fromLane?y:ty;p.x1=fromLane?tx:x;p.y1=fromLane?ty:y;
+  p.life=p.dur=1.5+Math.random()*.6;p.k=k;
+  p.e.setAttribute('d',m.d);p.e.setAttribute('fill',m.fill);p.e.setAttribute('stroke',m.stroke);
+}
+let acc=0;
+function gas(dt){
+  const on=active();
+  if(on.length&&dt>0){acc+=dt*4.2*on.length;while(acc>=1){acc-=1;spawn(on);}}
+  P.forEach(p=>{
+    if(p.life<=0)return;
+    if(!st.sub[p.k]){p.life=0;p.e.setAttribute('opacity',0);return;}
+    p.life-=dt;const k=clamp(1-p.life/p.dur,0,1),e=k*k*(3-2*k);
+    p.e.setAttribute('transform','translate('+(p.x0+(p.x1-p.x0)*e).toFixed(1)+' '+(p.y0+(p.y1-p.y0)*e).toFixed(1)+')');
+    p.e.setAttribute('opacity',p.life<=0?0:k<.15?k/.15:k>.8?(1-k)/.2:1);
+  });
+}
+
+/* ---------- 每幀更新 ---------- */
+function step(dt){
+  st.time+=dt;
+  const cy=cycle(((st.time/1.5%1)+1)%1);beat(cy);
+  const avClosed=cy.av<.5;
+  for(let n=0;n<R.length;n++){
+    const r=R[n];let s=S[r.seg];
+    if(dt>0){
+      const m=s.drv?1+(cy.atria-.127)*1.2:1+s.pulse*(cy.vent-.2)*2,t0=r.t;let t1=t0+dt*s.speed*m/s.Lref[r.lane];
+      if(s.drv&&avClosed){const L=s.Lref[r.lane],g=1-13/L;if(t0<=g){if(t1>g)t1=g;}else t1=Math.max(g,t0-dt*45/L);}
+      r.t=t1;
+      while(r.t>=1){const po=!!s.over;r.t-=1;r.seg=(r.seg+1)%N;s=S[r.seg];r.lane=pickLane(s);r.el.setAttribute('data-c',s.circuit);if(!!s.over!==po)(s.over?gOver:gRbc).appendChild(r.el);}
+    }
+    const l=s.lanes[r.lane],f=r.t*(l.n-1),i=Math.min(l.n-2,f|0),a=f-i;
+    const x=l.X[i]+(l.X[i+1]-l.X[i])*a,y=l.Y[i]+(l.Y[i+1]-l.Y[i])*a;
+    const nx=l.NX[i]+(l.NX[i+1]-l.NX[i])*a,ny=l.NY[i]+(l.NY[i+1]-l.NY[i])*a;
+    const room=Math.max(0,(wAt(s,r.t)-17*s.rs)/2),d=r.off*room;
+    const px=x+nx*d,py=y+ny*d;r.x=px;r.y=py;
+    const ang=Math.atan2(-nx,ny);
+    const sx=s.rs*(s.bed?1.2:1),sy=s.rs*(s.bed?.92:1);
+    r.el.setAttribute('transform','translate('+px.toFixed(1)+' '+py.toFixed(1)+') rotate('+(ang*57.2958).toFixed(1)+') scale('+sx.toFixed(2)+' '+sy.toFixed(2)+')');
+    const o=Math.round(o2At(s,r.t)*50);
+    if(o!==r.key){r.key=o;const q=o/50;r.b.setAttribute('fill',rgb(mix(C.rD,C.rO,q)));r.b.setAttribute('stroke',rgb(mix(C.sD,C.sO,q)));}
+  }
+  gas(dt);
+  if(st.tracked){
+    ring.setAttribute('visibility','visible');ring.setAttribute('cx',st.tracked.x.toFixed(1));ring.setAttribute('cy',st.tracked.y.toFixed(1));
+    if(st.tracked.seg!==st.sel)H.select(st.tracked.seg);
+  }
+}
+H.step=step;H.st=st;H.R=R;H.ring=ring;H.segName=segName;
+})();
+(function(){
+'use strict';
+const H=window.__H,{$,svg,S,N,vcol,st,R,ring,segName,step}=H;
+const CIRC={sys:'體循環',pul:'肺循環'};
+const grad=s=>'linear-gradient(90deg,'+vcol(s.o2[0])+','+vcol(s.o2[1])+')';
+const bloodText=s=>s.o2[0]===s.o2[1]?(s.o2[0]?'充氧血':'缺氧血'):(s.o2[0]?'充氧血 → 缺氧血':'缺氧血 → 充氧血');
+
+/* 流動順序清單 */
+const ol=$('steps');
+S.forEach((s,i)=>{
+  if(i===0||i===8){const g=document.createElement('li');g.className='group';g.textContent=i===0?'體循環':'肺循環';ol.appendChild(g);}
+  const li=document.createElement('li'),b=document.createElement('button');
+  b.type='button';b.className='step';b.dataset.i=i;
+  b.innerHTML='<span class="n">'+(i+1)+'</span><span></span><i class="o" style="background:'+grad(s)+'"></i>';
+  b.children[1].textContent=segName(s);
+  li.appendChild(b);ol.appendChild(li);
+});
+const stepBtns=[...ol.querySelectorAll('.step')];
+
+/* 說明面板 */
+function select(i){
+  st.sel=i;const s=S[i],nx=S[(i+1)%N];
+  $('tCirc').textContent=CIRC[s.circuit];
+  $('tBlood').innerHTML='<i style="background:'+grad(s)+'"></i><span></span>';
+  $('tBlood').lastChild.textContent=bloodText(s);
+  $('iName').textContent=segName(s);
+  $('iDesc').textContent=s.desc;
+  const dl=$('iFacts');dl.textContent='';
+  s.facts.forEach(f=>{const dt=document.createElement('dt'),dd=document.createElement('dd');dt.textContent=f[0];dd.textContent=f[1];dl.append(dt,dd);});
+  $('iNext').textContent='下一站：'+segName(nx)+' →';
+  $('iNext').dataset.i=(i+1)%N;
+  stepBtns.forEach((b,k)=>b.setAttribute('aria-current',k===i?'true':'false'));
+  S.forEach((q,k)=>q.hits.forEach(h=>h.classList.toggle('sel',k===i)));
+}
+H.select=select;
+function manual(i){stopTrack();select(i);}
+
+/* 追蹤紅血球 */
+function startTrack(r){
+  st.tracked=r;$('track').setAttribute('aria-pressed','true');$('track').textContent='停止追蹤';
+  select(r.seg);
+}
+function stopTrack(){
+  st.tracked=null;ring.setAttribute('visibility','hidden');
+  $('track').setAttribute('aria-pressed','false');$('track').textContent='追蹤紅血球';
+}
+$('track').addEventListener('click',()=>{
+  if(st.tracked){stopTrack();return;}
+  // 選一顆剛離開左心室不久的紅血球，從起點開始看
+  let best=null,bp=1e9;
+  R.forEach(r=>{let p=0;for(let k=0;k<r.seg;k++)p+=S[k].dur;p+=r.t*S[r.seg].dur;if(p<bp){bp=p;best=r;}});
+  startTrack(best);
+});
+
+/* 點選與懸停 */
+const gHit=$('gHit');
+const hov=(i,on)=>S[i].hits.forEach(h=>h.classList.toggle('hov',on));
+let hovI=-1;
+gHit.addEventListener('pointerover',e=>{const h=e.target.closest('.hit');if(!h)return;if(hovI>=0)hov(hovI,false);hovI=+h.dataset.i;hov(hovI,true);});
+gHit.addEventListener('pointerleave',()=>{if(hovI>=0)hov(hovI,false);hovI=-1;});
+gHit.addEventListener('click',e=>{
+  const h=e.target.closest('.hit');if(!h)return;
+  const m=svg.getScreenCTM();
+  if(m){
+    const pt=svg.createSVGPoint();pt.x=e.clientX;pt.y=e.clientY;const q=pt.matrixTransform(m.inverse());
+    let best=null,bd=13;R.forEach(r=>{const d=Math.hypot(r.x-q.x,r.y-q.y);if(d<bd){bd=d;best=r;}});
+    if(best){startTrack(best);return;}
+  }
+  manual(+h.dataset.i);
+});
+ol.addEventListener('click',e=>{const b=e.target.closest('.step');if(b)manual(+b.dataset.i);});
+$('iNext').addEventListener('click',e=>manual(+e.currentTarget.dataset.i));
+
+/* 控制列 */
+const playBtn=$('play');
+function setPlay(v){st.playing=v;playBtn.textContent=v?'暫停':'播放';playBtn.setAttribute('aria-pressed',v?'true':'false');}
+playBtn.addEventListener('click',()=>setPlay(!st.playing));
+$('speed').addEventListener('input',e=>{st.speed=+e.target.value;$('speedOut').textContent=st.speed+'×';});
+document.querySelectorAll('#filterSeg button').forEach(b=>b.addEventListener('click',()=>{
+  svg.dataset.f=b.dataset.f;
+  document.querySelectorAll('#filterSeg button').forEach(x=>x.setAttribute('aria-pressed',x===b?'true':'false'));
+}));
+$('tLabels').addEventListener('change',e=>svg.classList.toggle('nolabels',!e.target.checked));
+const G=H.concGroups;
+function layoutConc(){
+  const on=st.sub;
+  Object.keys(on).forEach(k=>svg.classList.toggle('show-'+k,!!on[k]));
+  svg.classList.toggle('show-lung',!!(on.o2||on.co2));
+  svg.classList.toggle('showconc',$('tConc').checked);
+  let y=742;G.tissue.forEach(([k,t])=>{if(on[k]){t.setAttribute('y',y);y-=22;}});
+  y=162;G.alv.forEach(([k,t])=>{if(on[k]){t.setAttribute('y',y);y+=22;}});
+  y=126;G.lung.forEach(([k,t])=>{if(on[k]){t.setAttribute('y',y);y+=22;}});
+}
+document.querySelectorAll('input[data-s]').forEach(c=>c.addEventListener('change',()=>{st.sub[c.dataset.s]=c.checked;layoutConc();}));
+$('tConc').addEventListener('change',layoutConc);
+layoutConc();
+svg.dataset.f='all';
+
+/* 顯示模式：網頁（橫式 16:9）／手機（直式） */
+const layoutEl=document.querySelector('.layout');
+function fit(){
+  if(document.body.dataset.view!=='web'||window.innerWidth<900){layoutEl.style.removeProperty('--sw');return;}
+  const h=layoutEl.clientHeight,w=layoutEl.clientWidth;
+  const sw=Math.max(320,Math.min(h*840/920-4,w-2*250-28));
+  layoutEl.style.setProperty('--sw',sw.toFixed(0)+'px');
+}
+function applyView(v,save){
+  document.body.dataset.view=v;
+  document.querySelectorAll('.viewtog button').forEach(b=>b.setAttribute('aria-pressed',b.dataset.v===v?'true':'false'));
+  if(save){try{localStorage.setItem('heartView',v);}catch(e){}}
+  fit();requestAnimationFrame(fit);
+}
+document.querySelectorAll('.viewtog button').forEach(b=>b.addEventListener('click',()=>applyView(b.dataset.v,true)));
+window.addEventListener('resize',fit);
+if(window.ResizeObserver)new ResizeObserver(fit).observe(layoutEl);
+let v0=null;try{v0=localStorage.getItem('heartView');}catch(e){}
+if(v0!=='web'&&v0!=='phone')v0=window.innerWidth>=900?'web':'phone';
+applyView(v0,false);
+
+/* 啟動 */
+setPlay(st.playing);select(0);step(0);
+let last=performance.now();
+function frame(now){
+  const dt=Math.min(.05,(now-last)/1000);last=now;
+  step(st.playing?dt*st.speed:0);
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+})();
+</script>
+
+</body></html>
